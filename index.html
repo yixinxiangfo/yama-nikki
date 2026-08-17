@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>山日記</title>
+    <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            color-scheme: light;
+            --surface-1: #fcfcfb;
+            --page: #f9f9f7;
+            --text-primary: #0b0b0b;
+            --text-secondary: #52514e;
+            --text-muted: #898781;
+            --gridline: #e1e0d9;
+            --baseline: #c3c2b7;
+            --border: rgba(11,11,11,0.10);
+            --series-blue-100: #cde2fb;
+            --series-blue-300: #6da7ec;
+            --series-blue-450: #2a78d6;
+            --series-blue-600: #184f95;
+            --success: #006300;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                color-scheme: dark;
+                --surface-1: #1a1a19;
+                --page: #0d0d0d;
+                --text-primary: #ffffff;
+                --text-secondary: #c3c2b7;
+                --text-muted: #898781;
+                --gridline: #2c2c2a;
+                --baseline: #383835;
+                --border: rgba(255,255,255,0.10);
+                --series-blue-100: #18314f;
+                --series-blue-300: #235e9e;
+                --series-blue-450: #3987e5;
+                --series-blue-600: #86b6ef;
+                --success: #0ca30c;
+            }
+        }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --surface-1: #1a1a19;
+            --page: #0d0d0d;
+            --text-primary: #ffffff;
+            --text-secondary: #c3c2b7;
+            --text-muted: #898781;
+            --gridline: #2c2c2a;
+            --baseline: #383835;
+            --border: rgba(255,255,255,0.10);
+            --series-blue-100: #18314f;
+            --series-blue-300: #235e9e;
+            --series-blue-450: #3987e5;
+            --series-blue-600: #86b6ef;
+            --success: #0ca30c;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            background-color: var(--page);
+            color: var(--text-primary);
+        }
+
+        .container { max-width: 900px; margin: 0 auto; padding: 1rem; }
+
+        .card {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+        .subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; }
+        h2 { font-size: 1.05rem; margin-bottom: 0.75rem; }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .field { display: flex; flex-direction: column; gap: 0.25rem; }
+        .field.full { grid-column: 1 / -1; }
+        label { font-size: 0.8rem; color: var(--text-secondary); }
+        input, select, textarea {
+            font: inherit;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 0.35rem;
+            background: var(--page);
+            color: var(--text-primary);
+        }
+        textarea { resize: vertical; min-height: 2.5rem; }
+
+        .btn {
+            padding: 0.55rem 1.1rem;
+            border: none;
+            border-radius: 0.4rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            background: var(--series-blue-450);
+            color: white;
+        }
+        .btn:hover { background: var(--series-blue-600); }
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .level-tag {
+            display: inline-block;
+            padding: 0.3rem 0.75rem;
+            border-radius: 999px;
+            background: var(--series-blue-100);
+            color: var(--series-blue-600);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .level-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; }
+
+        .entry-list { display: flex; flex-direction: column; gap: 0; }
+        .entry-row {
+            display: grid;
+            grid-template-columns: 5.5rem 1fr auto;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--gridline);
+        }
+        .entry-date { font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .entry-main { display: flex; flex-direction: column; gap: 0.15rem; }
+        .entry-name { font-size: 0.95rem; font-weight: 600; }
+        .entry-meta { font-size: 0.78rem; color: var(--text-secondary); }
+        .entry-badge {
+            font-size: 0.72rem;
+            color: var(--success);
+            font-weight: 600;
+        }
+        .entry-remove {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .entry-remove:hover { color: var(--text-primary); }
+
+        .chart { display: flex; flex-direction: column; gap: 0.5rem; }
+        .chart-row { display: grid; grid-template-columns: 5.5rem 1fr 2.5rem; align-items: center; gap: 0.6rem; }
+        .chart-label { font-size: 0.75rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .chart-track { background: var(--gridline); height: 10px; border-radius: 5px; overflow: hidden; }
+        .chart-fill { height: 100%; border-radius: 5px; background: var(--series-blue-450); }
+        .chart-value { font-size: 0.75rem; color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+
+        .empty { color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0; }
+
+        @media (max-width: 600px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .entry-row { grid-template-columns: 1fr auto; }
+            .entry-date { grid-column: 1 / -1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const EFFORT_LEVELS = [
+            { value: 'easy', label: '余裕だった', weight: 1 },
+            { value: 'moderate', label: 'ちょうどいい', weight: 2 },
+            { value: 'hard', label: 'きつかった', weight: 3 },
+            { value: 'limit', label: '限界に近かった', weight: 4 }
+        ];
+
+        const effortInfo = (value) => EFFORT_LEVELS.find(e => e.value === value) || EFFORT_LEVELS[1];
+
+        const loadEntries = () => {
+            try {
+                const saved = localStorage.getItem('yamaNikkiData');
+                return saved ? JSON.parse(saved) : [];
+            } catch {
+                return [];
+            }
+        };
+
+        const saveEntries = (entries) => {
+            try {
+                localStorage.setItem('yamaNikkiData', JSON.stringify(entries));
+            } catch (e) {
+                console.warn('保存に失敗しました:', e);
+            }
+        };
+
+        // 体感強度・行動時間・到達標高から強度スコアを推定する（あくまで目安）
+        const intensityScore = (entry) => {
+            const weight = effortInfo(entry.effort).weight;
+            const durationPart = entry.durationHours ? Number(entry.durationHours) : 0;
+            const elevationPart = entry.elevationM ? Number(entry.elevationM) / 1000 : 0;
+            return Math.round((weight * 2 + durationPart + elevationPart) * 10) / 10;
+        };
+
+        // 到達標高から登山レベルの目安を判定する（一般的な山岳区分に基づく大まかな目安）
+        const levelFromElevation = (maxElevation) => {
+            if (maxElevation === null) return { label: 'レベル判定にはまだデータが足りません', tone: 'muted' };
+            if (maxElevation < 1000) return { label: '低山ハイク帯' };
+            if (maxElevation < 2000) return { label: '中級山岳・入門' };
+            if (maxElevation < 3000) return { label: '中級山岳' };
+            return { label: '高山・アルプス級' };
+        };
+
+        const YamaNikkiApp = () => {
+            const [entries, setEntries] = useState(loadEntries);
+            const [form, setForm] = useState({
+                date: new Date().toISOString().slice(0, 10),
+                name: '',
+                effort: 'moderate',
+                elevationM: '',
+                durationHours: '',
+                notes: ''
+            });
+
+            useEffect(() => { saveEntries(entries); }, [entries]);
+
+            const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+            const addEntry = (e) => {
+                e.preventDefault();
+                if (!form.name.trim()) {
+                    alert('山・コース名を入力してください。');
+                    return;
+                }
+                const newEntry = {
+                    id: Date.now() + Math.random(),
+                    date: form.date,
+                    name: form.name.trim(),
+                    effort: form.effort,
+                    elevationM: form.elevationM ? Number(form.elevationM) : null,
+                    durationHours: form.durationHours ? Number(form.durationHours) : null,
+                    notes: form.notes.trim()
+                };
+                setEntries(prev => [...prev, newEntry].sort((a, b) => a.date.localeCompare(b.date)));
+                setForm(prev => ({ ...prev, name: '', elevationM: '', durationHours: '', notes: '' }));
+            };
+
+            const removeEntry = (id) => {
+                setEntries(prev => prev.filter(entry => entry.id !== id));
+            };
+
+            const sortedByDateDesc = [...entries].sort((a, b) => b.date.localeCompare(a.date));
+
+            // 同じ山・コースへの再訪で体感が軽くなっていれば「体力向上」の目印を出す
+            const improvementBadge = (entry) => {
+                const prior = entries
+                    .filter(e => e.name === entry.name && e.date < entry.date)
+                    .sort((a, b) => b.date.localeCompare(a.date))[0];
+                if (!prior) return null;
+                if (effortInfo(entry.effort).weight < effortInfo(prior.effort).weight) {
+                    return '前回より軽く感じた（体力アップの兆し）';
+                }
+                return null;
+            };
+
+            const maxElevation = entries.some(e => e.elevationM)
+                ? Math.max(...entries.filter(e => e.elevationM).map(e => e.elevationM))
+                : null;
+            const level = levelFromElevation(maxElevation);
+
+            const chartEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+            const maxScore = chartEntries.length > 0
+                ? Math.max(...chartEntries.map(intensityScore))
+                : 1;
+
+            return React.createElement('div', { className: 'container' },
+                React.createElement('div', { className: 'card' },
+                    React.createElement('h1', null, '⛰️ 山日記'),
+                    React.createElement('div', { className: 'subtitle' },
+                        'どこを歩いたか・どれくらいきつかったかを記録して、体力と登山レベルの推移をざっくり見るためのメモ帳です。'
+                    ),
+
+                    React.createElement('form', { onSubmit: addEntry },
+                        React.createElement('div', { className: 'form-grid' },
+                            React.createElement('div', { className: 'field' },
+                                React.createElement('label', null, '日付'),
+                                React.createElement('input', {
+                                    type: 'date',
+                                    value: form.date,
+                                    onChange: e => updateField('date', e.target.value)
+                                })
+                            ),
+                            React.createElement('div', { className: 'field' },
+                                React.createElement('label', null, '山・コース名'),
+                                React.createElement('input', {
+                                    type: 'text',
+                                    placeholder: '例：蓼科山',
+                                    value: form.name,
+                                    onChange: e => updateField('name', e.target.value)
+                                })
+                            ),
+                            React.createElement('div', { className: 'field' },
+                                React.createElement('label', null, '体感強度'),
+                                React.createElement('select', {
+                                    value: form.effort,
+                                    onChange: e => updateField('effort', e.target.value)
+                                },
+                                    EFFORT_LEVELS.map(level =>
+                                        React.createElement('option', { key: level.value, value: level.value }, level.label)
+                                    )
+                                )
+                            ),
+                            React.createElement('div', { className: 'field' },
+                                React.createElement('label', null, '行動時間（時間・任意）'),
+                                React.createElement('input', {
+                                    type: 'number',
+                                    step: '0.5',
+                                    min: '0',
+                                    placeholder: '例：4',
+                                    value: form.durationHours,
+                                    onChange: e => updateField('durationHours', e.target.value)
+                                })
+                            ),
+                            React.createElement('div', { className: 'field' },
+                                React.createElement('label', null, '到達標高（m・任意）'),
+                                React.createElement('input', {
+                                    type: 'number',
+                                    min: '0',
+                                    placeholder: '例：2530',
+                                    value: form.elevationM,
+                                    onChange: e => updateField('elevationM', e.target.value)
+                                })
+                            ),
+                            React.createElement('div', { className: 'field full' },
+                                React.createElement('label', null, 'メモ（任意）'),
+                                React.createElement('textarea', {
+                                    placeholder: '天気や道の様子など',
+                                    value: form.notes,
+                                    onChange: e => updateField('notes', e.target.value)
+                                })
+                            )
+                        ),
+                        React.createElement('button', { type: 'submit', className: 'btn' }, '記録を追加')
+                    )
+                ),
+
+                React.createElement('div', { className: 'card' },
+                    React.createElement('h2', null, '登山レベルの目安'),
+                    React.createElement('span', { className: 'level-tag' }, level.label),
+                    React.createElement('div', { className: 'level-note' },
+                        maxElevation !== null
+                            ? `これまでの最高到達標高 ${maxElevation}m から算出した大まかな目安です。低山(〜999m)／中級山岳入門(1000〜1999m)／中級山岳(2000〜2999m)／高山・アルプス級(3000m〜)の一般的な区分に基づく推測で、体感強度は加味していません。`
+                            : '記録に到達標高を入れると、その最高値から大まかなレベルを推測します。'
+                    )
+                ),
+
+                React.createElement('div', { className: 'card' },
+                    React.createElement('h2', null, '強度スコアの推移（推測値）'),
+                    chartEntries.length === 0
+                        ? React.createElement('div', { className: 'empty' }, 'まだ記録がありません。')
+                        : React.createElement('div', { className: 'chart' },
+                            chartEntries.map(entry => {
+                                const score = intensityScore(entry);
+                                const widthPct = Math.max(4, (score / maxScore) * 100);
+                                return React.createElement('div', { key: entry.id, className: 'chart-row' },
+                                    React.createElement('div', { className: 'chart-label' }, entry.date.slice(5)),
+                                    React.createElement('div', { className: 'chart-track' },
+                                        React.createElement('div', { className: 'chart-fill', style: { width: widthPct + '%' } })
+                                    ),
+                                    React.createElement('div', { className: 'chart-value' }, score)
+                                );
+                            })
+                        ),
+                    React.createElement('div', { className: 'level-note' },
+                        'スコア = 体感強度の重み×2 ＋ 行動時間 ＋ 到達標高(m)÷1000。正確な運動量ではなく、体感ベースの目安です。'
+                    )
+                ),
+
+                React.createElement('div', { className: 'card' },
+                    React.createElement('h2', null, '記録一覧'),
+                    sortedByDateDesc.length === 0
+                        ? React.createElement('div', { className: 'empty' }, 'まだ記録がありません。上のフォームから追加してください。')
+                        : React.createElement('div', { className: 'entry-list' },
+                            sortedByDateDesc.map(entry => {
+                                const badge = improvementBadge(entry);
+                                const metaParts = [effortInfo(entry.effort).label];
+                                if (entry.durationHours) metaParts.push(`${entry.durationHours}時間`);
+                                if (entry.elevationM) metaParts.push(`${entry.elevationM}m`);
+                                if (entry.notes) metaParts.push(entry.notes);
+                                return React.createElement('div', { key: entry.id, className: 'entry-row' },
+                                    React.createElement('div', { className: 'entry-date' }, entry.date),
+                                    React.createElement('div', { className: 'entry-main' },
+                                        React.createElement('div', { className: 'entry-name' }, entry.name),
+                                        React.createElement('div', { className: 'entry-meta' }, metaParts.join(' / ')),
+                                        badge && React.createElement('div', { className: 'entry-badge' }, badge)
+                                    ),
+                                    React.createElement('button', {
+                                        className: 'entry-remove',
+                                        onClick: () => removeEntry(entry.id)
+                                    }, '削除')
+                                );
+                            })
+                        )
+                )
+            );
+        };
+
+        ReactDOM.render(React.createElement(YamaNikkiApp), document.getElementById('root'));
+    </script>
+</body>
+</html>
