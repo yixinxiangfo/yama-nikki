@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行程ログ</title>
+<style>
+  :root {
+    color-scheme: light dark;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 12px;
+    background: #faf8f4;
+    color: #2a2a2a;
+  }
+  h1 {
+    font-size: 1.2rem;
+    margin: 8px 0 4px;
+  }
+  .note {
+    font-size: 0.78rem;
+    color: #777;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .status {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+  }
+  .status.ok { background: #e4f3e6; color: #2c6b34; }
+  .status.warn { background: #fbe9e4; color: #a13f1f; }
+
+  fieldset {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 16px;
+    background: white;
+  }
+  legend {
+    font-weight: 600;
+    padding: 0 6px;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    margin: 10px 0 4px;
+    color: #555;
+  }
+  input[type="time"], input[type="text"], textarea, select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  textarea { min-height: 60px; resize: vertical; }
+  input[type="file"] { width: 100%; margin-top: 4px; }
+
+  .photo-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .photo-preview img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+  }
+
+  button {
+    font-size: 1rem;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary {
+    background: #3a6b4c;
+    color: white;
+    width: 100%;
+    margin-top: 12px;
+  }
+  .btn-secondary {
+    background: #eee;
+    color: #333;
+    font-size: 0.85rem;
+    padding: 6px 12px;
+  }
+  .btn-danger {
+    background: #f4dede;
+    color: #a13f1f;
+    font-size: 0.8rem;
+    padding: 4px 10px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .entry {
+    background: white;
+    border: 1px solid #e2e2e2;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .entry-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .entry-time {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #3a6b4c;
+  }
+  .entry-place {
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  .entry-memo {
+    font-size: 0.9rem;
+    color: #444;
+    margin-top: 4px;
+    white-space: pre-wrap;
+  }
+  .entry-photos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .entry-photos img {
+    width: 90px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  .entry-actions {
+    margin-top: 8px;
+    text-align: right;
+  }
+
+  #exportArea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 140px;
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+
+  .empty {
+    color: #999;
+    text-align: center;
+    padding: 20px;
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>行程ログ</h1>
+<p class="note">
+  完全オフライン動作(外部通信なし)。<strong>電波のあるうちに一度このページを開いておけば</strong>、
+  以降は電波が無い場所でも記録できます。データは端末のブラウザ内(LocalStorage)に保存されるので、
+  同じ端末・同じブラウザで開き直してください。
+</p>
+<div id="storageStatus" class="status ok"></div>
+
+<div class="toolbar">
+  <label style="flex:1; margin:0;">
+    表示する日付
+    <input type="text" id="dateSelect" readonly style="background:#f0f0f0;">
+  </label>
+</div>
+
+<fieldset>
+  <legend>新規記録</legend>
+  <label>時刻</label>
+  <input type="time" id="inputTime">
+
+  <label>地点名</label>
+  <input type="text" id="inputPlace" placeholder="例: 麦草峠分岐">
+
+  <label>メモ</label>
+  <textarea id="inputMemo" placeholder="気づいたこと・様子など"></textarea>
+
+  <label>写真(その場で撮影 or 選択、複数可)</label>
+  <input type="file" id="inputPhoto" accept="image/*" capture="environment" multiple>
+  <div class="photo-preview" id="photoPreview"></div>
+
+  <button class="btn-primary" onclick="addEntry()">この内容で記録する</button>
+</fieldset>
+
+<div class="toolbar">
+  <button class="btn-secondary" onclick="renderExport()">テキストとしてまとめる(LOG.md用)</button>
+  <button class="btn-secondary" onclick="exportJSON()">JSONで書き出す(バックアップ)</button>
+</div>
+
+<textarea id="exportArea" style="display:none;" readonly></textarea>
+
+<div id="entryList"></div>
+
+<script>
+const STORAGE_KEY = 'koutei-log-v1';
+const todayStr = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+};
+const nowTimeStr = () => {
+  const d = new Date();
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+};
+
+let currentDate = todayStr();
+let pendingPhotos = [];
+
+function loadAll() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveAll(data) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    updateStorageStatus(true);
+  } catch (e) {
+    updateStorageStatus(false);
+    alert('保存に失敗しました。容量オーバーの可能性があります(写真が多すぎるかも)。JSONで書き出してから、古い記録を削除してください。');
+  }
+}
+
+function updateStorageStatus(ok) {
+  const el = document.getElementById('storageStatus');
+  if (ok === false) {
+    el.className = 'status warn';
+    el.textContent = '⚠ 保存容量が厳しくなっています。写真を減らすかバックアップして整理してください。';
+    return;
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) || '';
+    const kb = Math.round(new Blob([raw]).size / 1024);
+    el.className = 'status ok';
+    el.textContent = `保存中: 約${kb}KB (端末内)`;
+  } catch (e) {
+    el.className = 'status ok';
+    el.textContent = 'オフラインで記録可能です';
+  }
+}
+
+function resizeImage(file, maxDim, quality) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round(height * maxDim / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round(width * maxDim / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+document.getElementById('inputPhoto').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  for (const f of files) {
+    const dataUrl = await resizeImage(f, 1000, 0.7);
+    pendingPhotos.push(dataUrl);
+  }
+  renderPhotoPreview();
+});
+
+function renderPhotoPreview() {
+  const wrap = document.getElementById('photoPreview');
+  wrap.innerHTML = pendingPhotos.map((p, i) =>
+    `<img src="${p}" onclick="removePendingPhoto(${i})">`
+  ).join('');
+}
+
+function removePendingPhoto(i) {
+  pendingPhotos.splice(i, 1);
+  renderPhotoPreview();
+}
+
+function addEntry() {
+  const time = document.getElementById('inputTime').value || nowTimeStr();
+  const place = document.getElementById('inputPlace').value.trim();
+  const memo = document.getElementById('inputMemo').value.trim();
+
+  if (!place && !memo && pendingPhotos.length === 0) {
+    alert('地点名・メモ・写真のいずれかを入力してください');
+    return;
+  }
+
+  const all = loadAll();
+  if (!all[currentDate]) all[currentDate] = [];
+  all[currentDate].push({
+    id: Date.now(),
+    time, place, memo,
+    photos: pendingPhotos
+  });
+  all[currentDate].sort((a, b) => a.time.localeCompare(b.time));
+  saveAll(all);
+
+  document.getElementById('inputPlace').value = '';
+  document.getElementById('inputMemo').value = '';
+  document.getElementById('inputPhoto').value = '';
+  pendingPhotos = [];
+  renderPhotoPreview();
+  setDefaultTime();
+  renderEntries();
+}
+
+function deleteEntry(id) {
+  if (!confirm('この記録を削除しますか?')) return;
+  const all = loadAll();
+  all[currentDate] = (all[currentDate] || []).filter(e => e.id !== id);
+  saveAll(all);
+  renderEntries();
+}
+
+function renderEntries() {
+  const all = loadAll();
+  const list = all[currentDate] || [];
+  const el = document.getElementById('entryList');
+  if (list.length === 0) {
+    el.innerHTML = '<div class="empty">まだ記録がありません</div>';
+    return;
+  }
+  el.innerHTML = list.map(e => `
+    <div class="entry">
+      <div class="entry-head">
+        <div><span class="entry-time">${e.time}</span><span class="entry-place">${escapeHtml(e.place)}</span></div>
+      </div>
+      ${e.memo ? `<div class="entry-memo">${escapeHtml(e.memo)}</div>` : ''}
+      ${e.photos && e.photos.length ? `<div class="entry-photos">${e.photos.map(p => `<img src="${p}">`).join('')}</div>` : ''}
+      <div class="entry-actions">
+        <button class="btn-danger" onclick="deleteEntry(${e.id})">削除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function renderExport() {
+  const all = loadAll();
+  const list = all[currentDate] || [];
+  const area = document.getElementById('exportArea');
+  if (list.length === 0) {
+    area.style.display = 'none';
+    alert('この日の記録がありません');
+    return;
+  }
+  const lines = list.map(e => {
+    let line = `${e.place}${e.time}`;
+    if (e.memo) line += `　${e.memo}`;
+    return line;
+  });
+  area.value = `## ${currentDate}\n\n` + lines.join('\n');
+  area.style.display = 'block';
+  area.select();
+}
+
+function exportJSON() {
+  const all = loadAll();
+  const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `koutei-log-backup-${todayStr()}.json`;
+  a.click();
+}
+
+function setDefaultTime() {
+  document.getElementById('inputTime').value = nowTimeStr();
+}
+
+document.getElementById('dateSelect').value = currentDate;
+setDefaultTime();
+renderEntries();
+updateStorageStatus(true);
+</script>
+
+</body>
+</html>
