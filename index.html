@@ -214,21 +214,62 @@
 
         const effortInfo = (value) => EFFORT_LEVELS.find(e => e.value === value) || EFFORT_LEVELS[1];
 
-        const loadEntries = () => {
+        // 記録データの保存先はIndexedDB（localStorageは5〜10MB程度しか使えず、
+        // 写真付きの記録が積み上がると容量上限に達してしまうため）
+        const YAMA_DB_NAME = 'yamaNikkiDB';
+        const YAMA_STORE_NAME = 'entries';
+
+        const openYamaDb = () => new Promise((resolve, reject) => {
+            const req = indexedDB.open(YAMA_DB_NAME, 1);
+            req.onupgradeneeded = () => {
+                if (!req.result.objectStoreNames.contains(YAMA_STORE_NAME)) {
+                    req.result.createObjectStore(YAMA_STORE_NAME);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+
+        // 記録データを読み込み（旧localStorage形式が残っていれば一回だけ移行する）
+        const loadEntries = async () => {
             try {
-                const saved = localStorage.getItem('yamaNikkiData');
-                return saved ? JSON.parse(saved) : [];
-            } catch {
+                const db = await openYamaDb();
+                const fromDb = await new Promise((resolve, reject) => {
+                    const tx = db.transaction(YAMA_STORE_NAME, 'readonly');
+                    const req = tx.objectStore(YAMA_STORE_NAME).get('entries');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                if (fromDb && fromDb.length > 0) return fromDb;
+
+                const legacy = localStorage.getItem('yamaNikkiData');
+                if (legacy) {
+                    const parsed = JSON.parse(legacy);
+                    if (parsed.length > 0) {
+                        await saveEntries(parsed);
+                        localStorage.removeItem('yamaNikkiData');
+                        return parsed;
+                    }
+                }
+                return [];
+            } catch (e) {
+                console.warn('記録データの読み込みに失敗しました:', e);
                 return [];
             }
         };
 
-        const saveEntries = (entries) => {
+        const saveEntries = async (entries) => {
             try {
-                localStorage.setItem('yamaNikkiData', JSON.stringify(entries));
+                const db = await openYamaDb();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(YAMA_STORE_NAME, 'readwrite');
+                    tx.objectStore(YAMA_STORE_NAME).put(entries, 'entries');
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
             } catch (e) {
                 console.warn('保存に失敗しました:', e);
-                alert('記録の保存に失敗しました（ブラウザの保存容量の上限に達した可能性があります）。写真を減らすか記録を整理してください。');
+                alert('記録の保存に失敗しました。写真を減らすか記録を整理してください。');
             }
         };
 
@@ -372,7 +413,8 @@
         };
 
         const YamaNikkiApp = () => {
-            const [entries, setEntries] = useState(loadEntries);
+            const [entries, setEntries] = useState([]);
+            const [isLoaded, setIsLoaded] = useState(false);
             const [form, setForm] = useState({
                 date: new Date().toISOString().slice(0, 10),
                 name: '',
@@ -386,7 +428,19 @@
             const tokenClientRef = useRef(null);
             const pendingImportRef = useRef(null);
 
-            useEffect(() => { saveEntries(entries); }, [entries]);
+            // 起動時に一度だけIndexedDBから読み込み
+            useEffect(() => {
+                loadEntries().then(loaded => {
+                    setEntries(loaded);
+                    setIsLoaded(true);
+                });
+            }, []);
+
+            // 読み込み完了前に空配列で上書き保存してしまわないようガード
+            useEffect(() => {
+                if (!isLoaded) return;
+                saveEntries(entries);
+            }, [entries, isLoaded]);
 
             const handleGooglePhotosImport = () => {
                 if (googlePhotosStatus) return;
