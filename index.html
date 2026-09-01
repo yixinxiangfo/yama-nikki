@@ -228,6 +228,7 @@
                 localStorage.setItem('yamaNikkiData', JSON.stringify(entries));
             } catch (e) {
                 console.warn('保存に失敗しました:', e);
+                alert('記録の保存に失敗しました（ブラウザの保存容量の上限に達した可能性があります）。写真を減らすか記録を整理してください。');
             }
         };
 
