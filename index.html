@@ -288,7 +288,7 @@
         });
 
         // Googleフォトのピッカーでユーザーに写真を選んでもらい、縮小済み画像データを取得する
-        const importFromGooglePhotos = async (accessToken, popupWindow, onStatus) => {
+        const importFromGooglePhotos = async (accessToken, onStatus) => {
             onStatus('セッションを作成中...');
             const sessionRes = await fetch(`${PHOTOS_PICKER_API}/sessions`, {
                 method: 'POST',
@@ -303,10 +303,9 @@
             }
             let session = await sessionRes.json();
 
-            if (popupWindow && !popupWindow.closed) {
-                popupWindow.location.href = session.pickerUri;
-            } else {
-                window.open(session.pickerUri, '_blank');
+            const pickerWindow = window.open(session.pickerUri, '_blank');
+            if (!pickerWindow) {
+                throw new Error('ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップ（別タブ）を許可してから、もう一度お試しください。');
             }
 
             onStatus('開いた画面で手早く選んでください...');
@@ -396,16 +395,10 @@
                     return;
                 }
 
-                const popupWindow = window.open('about:blank', '_blank', 'width=480,height=720');
-                if (!popupWindow) {
-                    alert('ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可してください。');
-                    return;
-                }
-
                 const runImport = async (accessToken) => {
                     try {
                         setGooglePhotosStatus('準備中...');
-                        const newPhotos = await importFromGooglePhotos(accessToken, popupWindow, setGooglePhotosStatus);
+                        const newPhotos = await importFromGooglePhotos(accessToken, setGooglePhotosStatus);
                         if (newPhotos.length === 0) {
                             alert('写真が選択されませんでした。');
                         } else {
@@ -427,7 +420,6 @@
                             pendingImportRef.current = null;
                             if (!pending) return;
                             if (response.error) {
-                                pending.popupWindow.close();
                                 alert('Googleへのログインに失敗しました: ' + response.error);
                                 setGooglePhotosStatus(null);
                                 return;
@@ -436,7 +428,7 @@
                         }
                     });
                 }
-                pendingImportRef.current = { popupWindow, runImport };
+                pendingImportRef.current = { runImport };
                 tokenClientRef.current.requestAccessToken();
             };
 
