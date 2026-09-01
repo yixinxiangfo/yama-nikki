@@ -309,10 +309,10 @@
                 window.open(session.pickerUri, '_blank');
             }
 
-            onStatus('開いた画面から写真を選んでください...');
+            onStatus('開いた画面で手早く選んでください...');
 
             const pollIntervalMs = parseDurationToMs(session.pollingConfig && session.pollingConfig.pollInterval, 3000);
-            const deadline = Date.now() + 10 * 60 * 1000; // 10分でタイムアウト
+            const deadline = Date.now() + 30 * 60 * 1000; // 30分でタイムアウト
 
             while (!session.mediaItemsSet) {
                 if (Date.now() > deadline) {
