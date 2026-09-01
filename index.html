@@ -7,6 +7,7 @@
     <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -163,6 +164,34 @@
 
         .empty { color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0; }
 
+        .photo-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+        .photo-thumb-wrap { position: relative; width: 64px; height: 64px; }
+        .photo-thumb {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 0.35rem;
+            border: 1px solid var(--border);
+            display: block;
+        }
+        .photo-thumb-remove {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: none;
+            background: var(--text-primary);
+            color: var(--surface-1);
+            font-size: 0.65rem;
+            line-height: 18px;
+            text-align: center;
+            cursor: pointer;
+            padding: 0;
+        }
+        .btn-row-inline { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
         @media (max-width: 600px) {
             .form-grid { grid-template-columns: 1fr; }
             .entry-row { grid-template-columns: 1fr auto; }
@@ -174,7 +203,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         const EFFORT_LEVELS = [
             { value: 'easy', label: '余裕だった', weight: 1 },
@@ -219,6 +248,129 @@
             return { label: '高山・アルプス級' };
         };
 
+        // Googleフォト連携（Photos Picker API）
+        const GOOGLE_CLIENT_ID = '1000951261592-jacn8l2lejvke61ts54fqi4na5qhahdr.apps.googleusercontent.com';
+        const GOOGLE_PHOTOS_SCOPE = 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly';
+        const PHOTOS_PICKER_API = 'https://photospicker.googleapis.com/v1';
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        const parseDurationToMs = (duration, fallbackMs) => {
+            if (!duration) return fallbackMs;
+            const seconds = parseFloat(duration);
+            return Number.isFinite(seconds) ? seconds * 1000 : fallbackMs;
+        };
+
+        const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+
+        // LocalStorageの容量を圧迫しないよう、長辺1000px・JPEG品質0.8まで縮小する
+        const resizeImageDataUrl = (dataUrl, maxDim) => new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > maxDim || height > maxDim) {
+                    const scale = maxDim / Math.max(width, height);
+                    width = Math.round(width * scale);
+                    height = Math.round(height * scale);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.8));
+            };
+            img.src = dataUrl;
+        });
+
+        // Googleフォトのピッカーでユーザーに写真を選んでもらい、縮小済み画像データを取得する
+        const importFromGooglePhotos = async (accessToken, popupWindow, onStatus) => {
+            onStatus('セッションを作成中...');
+            const sessionRes = await fetch(`${PHOTOS_PICKER_API}/sessions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            });
+            if (!sessionRes.ok) {
+                throw new Error('セッションの作成に失敗しました。');
+            }
+            let session = await sessionRes.json();
+
+            if (popupWindow && !popupWindow.closed) {
+                popupWindow.location.href = session.pickerUri;
+            } else {
+                window.open(session.pickerUri, '_blank');
+            }
+
+            onStatus('開いた画面から写真を選んでください...');
+
+            const pollIntervalMs = parseDurationToMs(session.pollingConfig && session.pollingConfig.pollInterval, 3000);
+            const deadline = Date.now() + 10 * 60 * 1000; // 10分でタイムアウト
+
+            while (!session.mediaItemsSet) {
+                if (Date.now() > deadline) {
+                    throw new Error('選択がタイムアウトしました。もう一度お試しください。');
+                }
+                await sleep(pollIntervalMs);
+                const pollRes = await fetch(`${PHOTOS_PICKER_API}/sessions/${session.id}`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!pollRes.ok) {
+                    throw new Error('選択状況の確認に失敗しました。');
+                }
+                session = await pollRes.json();
+            }
+
+            onStatus('選んだ写真を取得中...');
+
+            let mediaItems = [];
+            let pageToken = '';
+            do {
+                const url = new URL(`${PHOTOS_PICKER_API}/mediaItems`);
+                url.searchParams.set('sessionId', session.id);
+                if (pageToken) url.searchParams.set('pageToken', pageToken);
+                const listRes = await fetch(url.toString(), {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!listRes.ok) {
+                    throw new Error('写真一覧の取得に失敗しました。');
+                }
+                const listJson = await listRes.json();
+                mediaItems = mediaItems.concat(listJson.mediaItems || []);
+                pageToken = listJson.nextPageToken || '';
+            } while (pageToken);
+
+            const newPhotos = [];
+            for (let i = 0; i < mediaItems.length; i++) {
+                const item = mediaItems[i];
+                const baseUrl = item.mediaFile && item.mediaFile.baseUrl;
+                if (!baseUrl) continue;
+                onStatus(`写真を読み込み中 (${i + 1}/${mediaItems.length})...`);
+                const imgRes = await fetch(`${baseUrl}=d`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!imgRes.ok) continue;
+                const blob = await imgRes.blob();
+                const dataUrl = await blobToDataUrl(blob);
+                const resized = await resizeImageDataUrl(dataUrl, 1000);
+                newPhotos.push(resized);
+            }
+
+            fetch(`${PHOTOS_PICKER_API}/sessions/${session.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            }).catch(() => {});
+
+            return newPhotos;
+        };
+
         const YamaNikkiApp = () => {
             const [entries, setEntries] = useState(loadEntries);
             const [form, setForm] = useState({
@@ -227,10 +379,70 @@
                 effort: 'moderate',
                 elevationM: '',
                 durationHours: '',
-                notes: ''
+                notes: '',
+                photos: []
             });
+            const [googlePhotosStatus, setGooglePhotosStatus] = useState(null);
+            const tokenClientRef = useRef(null);
+            const pendingImportRef = useRef(null);
 
             useEffect(() => { saveEntries(entries); }, [entries]);
+
+            const handleGooglePhotosImport = () => {
+                if (googlePhotosStatus) return;
+
+                if (typeof google === 'undefined' || !google.accounts) {
+                    alert('Google連携の読み込みが完了していません。少し待ってからもう一度お試しください。');
+                    return;
+                }
+
+                const popupWindow = window.open('about:blank', '_blank', 'width=480,height=720');
+                if (!popupWindow) {
+                    alert('ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可してください。');
+                    return;
+                }
+
+                const runImport = async (accessToken) => {
+                    try {
+                        setGooglePhotosStatus('準備中...');
+                        const newPhotos = await importFromGooglePhotos(accessToken, popupWindow, setGooglePhotosStatus);
+                        if (newPhotos.length === 0) {
+                            alert('写真が選択されませんでした。');
+                        } else {
+                            setForm(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
+                        }
+                    } catch (err) {
+                        alert('Googleフォトからの読み込みに失敗しました: ' + err.message);
+                    } finally {
+                        setGooglePhotosStatus(null);
+                    }
+                };
+
+                if (!tokenClientRef.current) {
+                    tokenClientRef.current = google.accounts.oauth2.initTokenClient({
+                        client_id: GOOGLE_CLIENT_ID,
+                        scope: GOOGLE_PHOTOS_SCOPE,
+                        callback: (response) => {
+                            const pending = pendingImportRef.current;
+                            pendingImportRef.current = null;
+                            if (!pending) return;
+                            if (response.error) {
+                                pending.popupWindow.close();
+                                alert('Googleへのログインに失敗しました: ' + response.error);
+                                setGooglePhotosStatus(null);
+                                return;
+                            }
+                            pending.runImport(response.access_token);
+                        }
+                    });
+                }
+                pendingImportRef.current = { popupWindow, runImport };
+                tokenClientRef.current.requestAccessToken();
+            };
+
+            const removeStagedPhoto = (index) => {
+                setForm(prev => ({ ...prev, photos: prev.photos.filter((_, i) => i !== index) }));
+            };
 
             const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -247,10 +459,11 @@
                     effort: form.effort,
                     elevationM: form.elevationM ? Number(form.elevationM) : null,
                     durationHours: form.durationHours ? Number(form.durationHours) : null,
-                    notes: form.notes.trim()
+                    notes: form.notes.trim(),
+                    photos: form.photos
                 };
                 setEntries(prev => [...prev, newEntry].sort((a, b) => a.date.localeCompare(b.date)));
-                setForm(prev => ({ ...prev, name: '', elevationM: '', durationHours: '', notes: '' }));
+                setForm(prev => ({ ...prev, name: '', elevationM: '', durationHours: '', notes: '', photos: [] }));
             };
 
             const removeEntry = (id) => {
@@ -348,6 +561,29 @@
                                 })
                             )
                         ),
+                        React.createElement('div', { className: 'field', style: { marginBottom: '0.75rem' } },
+                            React.createElement('label', null, '写真（任意）'),
+                            React.createElement('div', { className: 'btn-row-inline' },
+                                React.createElement('button', {
+                                    type: 'button',
+                                    className: 'btn btn-ghost',
+                                    onClick: handleGooglePhotosImport,
+                                    disabled: !!googlePhotosStatus
+                                }, googlePhotosStatus || '🖼️ Googleフォトから選ぶ')
+                            ),
+                            form.photos.length > 0 && React.createElement('div', { className: 'photo-strip' },
+                                form.photos.map((src, i) =>
+                                    React.createElement('div', { key: i, className: 'photo-thumb-wrap' },
+                                        React.createElement('img', { className: 'photo-thumb', src: src }),
+                                        React.createElement('button', {
+                                            type: 'button',
+                                            className: 'photo-thumb-remove',
+                                            onClick: () => removeStagedPhoto(i)
+                                        }, '×')
+                                    )
+                                )
+                            )
+                        ),
                         React.createElement('button', { type: 'submit', className: 'btn' }, '記録を追加')
                     )
                 ),
@@ -400,7 +636,12 @@
                                     React.createElement('div', { className: 'entry-main' },
                                         React.createElement('div', { className: 'entry-name' }, entry.name),
                                         React.createElement('div', { className: 'entry-meta' }, metaParts.join(' / ')),
-                                        badge && React.createElement('div', { className: 'entry-badge' }, badge)
+                                        badge && React.createElement('div', { className: 'entry-badge' }, badge),
+                                        entry.photos && entry.photos.length > 0 && React.createElement('div', { className: 'photo-strip' },
+                                            entry.photos.map((src, i) =>
+                                                React.createElement('img', { key: i, className: 'photo-thumb', src: src })
+                                            )
+                                        )
                                     ),
                                     React.createElement('button', {
                                         className: 'entry-remove',
